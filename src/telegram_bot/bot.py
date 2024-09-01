@@ -26,7 +26,6 @@ class TelegramBot:
         self.application = self._create_application_with_retry()
 
         self._setup_handlers()
-        self._log_system_info()
 
     def _setup_handlers(self):
         command_handlers = [
