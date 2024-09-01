@@ -1,0 +1,13 @@
+.env
+.venv
+.idea
+__pycache__
+htmlcov
+pytest.ini
+.coverage
+tests/htmlcov
+tests/.coverage
+mkdocs.yml
+docs
+site
+audios

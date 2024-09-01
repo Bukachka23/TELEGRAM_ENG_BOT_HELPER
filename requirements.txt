@@ -1,0 +1,7 @@
+gTTS==2.5.3
+pydub==0.25.1
+openai==1.42.0
+python-dotenv==1.0.1
+APScheduler==3.10.4
+psutil==6.0.0
+python-telegram-bot==21.4
