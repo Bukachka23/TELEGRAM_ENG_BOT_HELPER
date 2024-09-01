@@ -2,11 +2,11 @@ import logging.config
 import os
 import time
 from typing import Optional
-
+from tenacity import retry, stop_after_attempt, wait_exponential
 import psutil
 from telegram import Update
 from telegram.ext import CallbackContext, CommandHandler, Application, MessageHandler, filters, ConversationHandler
-
+from telegram.request import HTTPXRequest
 from src.audio.speech import SpeechEngine
 from src.configs.log_config import LOGGING
 from src.configs.config import EnvSettings, TelegramData
@@ -18,10 +18,12 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     def __init__(self):
-        self.application = Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).build()
+        request = HTTPXRequest(connection_pool_size=8, connect_timeout=60, read_timeout=60)
+        self.application = Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).request(request).build()
         self.ai = OpenAIEngine()
         self.speech_engine = SpeechEngine()
         self.bot = self.application.bot
+        self.application = self._create_application_with_retry()
 
         self._setup_handlers()
         self._log_system_info()
@@ -67,6 +69,10 @@ class TelegramBot:
             persistent=False,
         )
         self.application.add_handler(quiz_handler)
+
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def _create_application_with_retry(self):
+        return Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).build()
 
     @staticmethod
     async def cancel_quiz(update: Update, context: CallbackContext) -> int:
