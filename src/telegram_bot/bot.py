@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     def __init__(self):
-        request = HTTPXRequest(connection_pool_size=8, connect_timeout=60, read_timeout=60)
+        request = HTTPXRequest(connection_pool_size=8, connect_timeout=120, read_timeout=120)
         self.application = Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).request(request).build()
         self.ai = OpenAIEngine()
         self.speech_engine = SpeechEngine()
@@ -83,6 +83,8 @@ class TelegramBot:
         return ConversationHandler.END
 
     async def scheduled_quiz(self, context: CallbackContext) -> None:
+        start_time = time.time()
+        logging.info("Starting scheduled quiz")
         chat_ids = context.bot_data.get('subscribed_users', [])
         for chat_id in chat_ids:
             try:
@@ -117,6 +119,9 @@ class TelegramBot:
 
             except Exception as e:
                 logging.error(f"Error sending scheduled quiz to {chat_id}: {e}")
+
+            end_time = time.time()
+            logging.info(f"Scheduled quiz completed in {end_time - start_time} seconds")
 
     @staticmethod
     async def subscribe_quiz(update: Update, context: CallbackContext) -> None:

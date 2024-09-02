@@ -11,3 +11,4 @@ mkdocs.yml
 docs
 site
 audios
+.DS_Store
