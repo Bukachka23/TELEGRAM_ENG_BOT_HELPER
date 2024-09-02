@@ -1,6 +1,7 @@
 import logging.config
 import os
 import time
+import random
 from typing import Optional
 from tenacity import retry, stop_after_attempt, wait_exponential
 import psutil
@@ -27,7 +28,7 @@ class TelegramBot:
 
         self._setup_handlers()
 
-    def _setup_handlers(self):
+    def _setup_handlers(self) -> None:
         command_handlers = [
             ('start', self.start),
             ('help', self.help),
@@ -152,7 +153,7 @@ class TelegramBot:
                 text="You're not currently subscribed to hourly quizzes."
             )
 
-    async def _log_system_info(self):
+    async def _log_system_info(self) -> None:
         if self.bot.get_me():
             logging.info(f"Logged in as {self.bot.get_me()}")
         else:
@@ -167,7 +168,7 @@ class TelegramBot:
             f"Disk: {disk_percent}% {'💾' if disk_percent > 80 else ''}"
         )
 
-    async def start(self, update: Update, context: CallbackContext):
+    async def start(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "start")
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -178,7 +179,7 @@ class TelegramBot:
             text="To get started, just type /help and I'll show you the way. Let's expand our vocabulary together 😊"
         )
 
-    async def help(self, update: Update, context: CallbackContext):
+    async def help(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "help")
         help_text = """
         👋 Welcome to @erocabulary_bot Here are some of my available commands:
@@ -217,7 +218,7 @@ class TelegramBot:
         ease and convenience. Start improving your English language proficiency today!"""
         await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
 
-    async def ping(self, update: Update, context: CallbackContext):
+    async def ping(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "ping")
         start_time = time.time()
         message = await context.bot.send_message(chat_id=update.effective_chat.id, text="Pinging..")
@@ -229,7 +230,7 @@ class TelegramBot:
             text=f"Pong! Latency is {latency}ms"
         )
 
-    async def send_text_and_voice_response(self, update: Update, context: CallbackContext, text: str):
+    async def send_text_and_voice_response(self, update: Update, context: CallbackContext, text: str) -> None:
         try:
             await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
             audio_filepath = self.speech_engine.convert_text_to_speech(text)
@@ -243,7 +244,7 @@ class TelegramBot:
                 text="Sorry, an error occurred while generating the voice response."
             )
 
-    async def handle_voice(self, update: Update, context: CallbackContext):
+    async def handle_voice(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "voice")
 
         ogg_filepath = await self.speech_engine.download_voice_as_ogg(update.message.voice)
@@ -260,10 +261,11 @@ class TelegramBot:
         os.remove(mp3_filepath)
         os.remove(response_audio_filepath)
 
-    async def send_vocab(self, update: Update, context: CallbackContext):
+    async def send_vocab(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "send_vocab")
-        prompt = """
-        Please provide a brief English word or phrase from spoken English,also provide an ukrainian translated version.
+        random_seed = random.randint(1, 1000000)
+        prompt = f"""
+        Please provide a brief English word or phrase from spoken English, also provide an Ukrainian translated version.
         Format your response as follows:
             Word: [insert word or phrase]
             Definition: [insert brief definition]
@@ -272,12 +274,13 @@ class TelegramBot:
             Визначення: [вставити коротке визначення]
             Use-Case: [вставити короткий приклад речення].
             Keep the entire response under 50 words.
-            """
+            Seed: {random_seed}  # Include the random seed in the prompt
+        """
         response = self._generate_ai_response(prompt)
 
         await self.send_text_and_voice_response(update, context, response)
 
-    async def meaning(self, update: Update, context: CallbackContext):
+    async def meaning(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "meaning")
         word = update.message.text.replace('/meaning ', '')
         await context.bot.send_message(
@@ -293,27 +296,27 @@ class TelegramBot:
         response = self._generate_ai_response(prompt)
         await self.send_text_and_voice_response(update, context, response)
 
-    async def email(self, update: Update, context: CallbackContext):
+    async def email(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(update, context, "email",
                                       "Please write an email on the following information/context {info}")
 
-    async def letter(self, update: Update, context: CallbackContext):
+    async def letter(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(update, context, "letter",
                                       "Please write a letter on the following information/context {info}")
 
-    async def summarise(self, update: Update, context: CallbackContext):
+    async def summarise(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(update, context, "summarise",
                                       "Please write a summary on the following "
                                       "information/paragraph: {info}")
 
-    async def essay(self, update: Update, context: CallbackContext):
+    async def essay(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(update, context, "essay",
                                       "Please write me an essay on {info} in 4000 symbols, "
                                       "also please use high quality vocabulary and keep "
                                       "it in simple language, also do mention approx. word count")
 
     @staticmethod
-    async def stats(update: Update, context: CallbackContext):
+    async def stats(update: Update, context: CallbackContext) -> None:
         try:
             logging.info("/stats invoked!")
             cpu_percent = psutil.cpu_percent()
@@ -328,7 +331,7 @@ class TelegramBot:
             await context.bot.send_message(chat_id=update.effective_chat.id,
                                            text=f"Exception occured while generating stats.\nErrorMessage:\n{e}")
 
-    async def translate_text(self, update: Update, context: CallbackContext):
+    async def translate_text(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "translate")
         text = update.message.text.replace('/translate ', '').strip()
 
@@ -508,20 +511,20 @@ class TelegramBot:
         response = self._generate_ai_response(prompt)
         await context.bot.send_message(chat_id=update.effective_chat.id, text=response)
 
-    async def compose(self, update: Update, context: CallbackContext):
+    async def compose(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(
             update, context, "compose",
             "Compose a {info} in high-quality English vocabulary with no grammatical errors. Make it sound original."
         )
 
-    async def rewrite(self, update: Update, context: CallbackContext):
+    async def rewrite(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(
             update, context, "rewrite",
             "Rewrite this text in high-quality English vocabulary with no grammatical errors. Make it sound "
             "original:\n\n{info}"
         )
 
-    async def ticket(self, update: Update, context: CallbackContext):
+    async def ticket(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "ticket")
         text = update.message.text
         ticket_info = text.replace("/ticket", "").strip()
@@ -535,8 +538,11 @@ class TelegramBot:
         )
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Issue Sent to admin:\n{ticket}")
 
-    async def pronounce(self, update: Update, context: CallbackContext):
+    async def pronounce(self, update: Update, context: CallbackContext) -> None:
         await self._handle_ai_command(
             update, context, "pronounce",
             "Teach me how to pronounce {info}. Explain it in simple English in 2-3 lines."
         )
+
+    async def initialize(self) -> None:
+        await self._log_system_info()
