@@ -2,6 +2,7 @@ import logging.config
 import random
 
 from openai import OpenAI
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.configs.log_config import LOGGING
 from src.configs.config import EnvSettings
@@ -34,6 +35,7 @@ class OpenAIEngine:
             logging.error(f"Error during translation: {e}")
             return "Sorry, an error occurred while translating the text."
 
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
     def generate_response(self):
         try:
             response = self.client.chat.completions.create(
@@ -43,7 +45,7 @@ class OpenAIEngine:
                                                   "tutoring."},
                     {"role": "user", "content": self.prompt}
                 ],
-                temperature=0.5,
+                temperature=0.7,
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
