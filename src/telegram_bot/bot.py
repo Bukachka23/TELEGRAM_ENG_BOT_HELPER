@@ -19,14 +19,17 @@ logger = logging.getLogger(__name__)
 
 class TelegramBot:
     def __init__(self):
-        request = HTTPXRequest(connection_pool_size=8, connect_timeout=120, read_timeout=120)
-        self.application = Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).request(request).build()
+        request = HTTPXRequest(connection_pool_size=8, connect_timeout=180, read_timeout=180)
         self.ai = OpenAIEngine()
         self.speech_engine = SpeechEngine()
+        self.application = self._create_application_with_retry(request)
         self.bot = self.application.bot
-        self.application = self._create_application_with_retry()
 
         self._setup_handlers()
+
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def _create_application_with_retry(self, request):
+        return Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).request(request).build()
 
     def _setup_handlers(self) -> None:
         command_handlers = [
