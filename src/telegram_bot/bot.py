@@ -1,8 +1,8 @@
+import aiofiles
 import logging.config
 import os
 import time
-import random
-from typing import Optional
+from typing import Optional, NoReturn
 from tenacity import retry, stop_after_attempt, wait_exponential
 import psutil
 from telegram import Update
@@ -11,6 +11,7 @@ from telegram.request import HTTPXRequest
 from src.audio.speech import SpeechEngine
 from src.configs.log_config import LOGGING
 from src.configs.config import EnvSettings, TelegramData
+from src.database.database_words import WordDatabase
 from src.open_ai.openai_init import OpenAIEngine
 
 logging.config.dictConfig(LOGGING)
@@ -23,6 +24,7 @@ class TelegramBot:
         self.speech_engine = SpeechEngine()
         self.application = self._create_application_with_retry()
         self.bot = self.application.bot
+        self.word_db = WordDatabase()
 
         self._setup_handlers()
 
@@ -73,6 +75,105 @@ class TelegramBot:
         )
         self.application.add_handler(quiz_handler)
 
+    async def _log_system_info(self) -> None:
+        bot_info = self.bot.get_me()
+        if bot_info:
+            logger.info(f"Logged in as {bot_info.username}")
+        else:
+            logger.error("Failed to log in.")
+
+        cpu_percent = psutil.cpu_percent()
+        memory_percent = psutil.virtual_memory().percent
+        disk_percent = psutil.disk_usage('/').percent
+        logger.info(
+            f"CPU: {cpu_percent}% {'🔥' if cpu_percent > 80 else ''} | "
+            f"Memory: {memory_percent}% {'☁' if memory_percent > 80 else ''} | "
+            f"Disk: {disk_percent}% {'💾' if disk_percent > 80 else ''}"
+        )
+
+    async def start(self, update: Update, context: CallbackContext) -> None:
+        self._log_command(update, "start")
+        welcome_message = """
+        Hello! I'm an English-tutor bot designed to help you improve your vocabulary.
+        To get started, type /help for available commands.
+        Let's expand our vocabulary together! 😊
+        """
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=welcome_message)
+
+    async def help(self, update: Update, context: CallbackContext) -> None:
+        self._log_command(update, "help")
+        help_text = """
+        Available commands:
+        /start - Greeting message
+        /help - Show this help message
+        /send_vocab - Improve vocabulary with random words
+        /meaning <word> - Get definition and usage example
+        /email <topic> - Compose an email
+        /essay <topic> - Generate an essay
+        /ping - Check bot latency
+        /stats - Show system statistics
+        /translate <text> - Translate to Ukrainian
+        /grammar_check <text> - Check grammar
+        /quiz - Start a translation quiz
+        /subscribe_quiz - Subscribe to hourly quizzes
+        /unsubscribe_quiz - Unsubscribe from hourly quizzes
+        """
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
+
+    async def send_vocab(self, update: Update, context: CallbackContext) -> None:
+        self._log_command(update, "send_vocab")
+        word = self.word_db.get_random_word()
+
+        if not word:
+            logger.warning("No word found in database")
+            await update.message.reply_text("Sorry, no word found in the database.")
+            return
+
+        prompts = [
+            f"Define '{word}' in one sentence:",
+            f"Generate a sentence using '{word}':",
+            f"Define '{word}' in Ukrainian in one sentence:",
+            f"Generate a Ukrainian sentence using '{word}':"
+        ]
+
+        responses = [self.ai.generate_response(prompt) for prompt in prompts]
+
+        full_response = f"""
+        Word: {word}
+        Definition: {responses[0]}
+        Example sentence: {responses[1]}
+
+        Слово: {word}
+        Визначення: {responses[2]}
+        Приклад речення: {responses[3]}
+        """
+
+        voice_response = f"""
+        Word: {word}
+        Definition: {responses[0]}
+        Example sentence: {responses[1]}
+        """
+
+        await self.send_partial_voice_response(update, context, full_response, voice_response)
+
+    async def send_text_and_voice_response(self, update: Update, context: CallbackContext, text: str) -> NoReturn:
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+            audio_filepath = await self.speech_engine.convert_text_to_speech(text)
+
+            async with aiofiles.open(audio_filepath, 'rb') as audio_file:
+                audio_content = await audio_file.read()
+
+            await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_content)
+
+            os.remove(audio_filepath)
+        except Exception as e:
+            logger.error(f"Error in send_text_and_voice_response: {e}")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Sorry, an error occurred while generating the voice response."
+            )
+
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _create_application_with_retry(self):
         return Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).build()
@@ -100,7 +201,7 @@ class TelegramBot:
                     )
                     continue
 
-                audio_filepath = self.speech_engine.convert_text_to_speech(quiz_data['english_sentence'])
+                audio_filepath = await self.speech_engine.convert_text_to_speech(quiz_data['english_sentence'])
 
                 with open(audio_filepath, 'rb') as audio:
                     await context.bot.send_voice(
@@ -161,71 +262,6 @@ class TelegramBot:
                 text="You're not currently subscribed to hourly quizzes."
             )
 
-    async def _log_system_info(self) -> None:
-        if self.bot.get_me():
-            logging.info(f"Logged in as {self.bot.get_me()}")
-        else:
-            logging.error("Failed to log in.")
-
-        cpu_percent = psutil.cpu_percent()
-        memory_percent = psutil.virtual_memory().percent
-        disk_percent = psutil.disk_usage('/').percent
-        logging.info(
-            f"CPU: {cpu_percent}% {'🔥' if cpu_percent > 80 else ''} | "
-            f"Memory: {memory_percent}% {'☁' if memory_percent > 80 else ''} | "
-            f"Disk: {disk_percent}% {'💾' if disk_percent > 80 else ''}"
-        )
-
-    async def start(self, update: Update, context: CallbackContext) -> None:
-        self._log_command(update, "start")
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="Hello there! I am English-tutor bot, designed to help you improve your vocabulary"
-        )
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="To get started, just type /help and I'll show you the way. Let's expand our vocabulary together 😊"
-        )
-
-    async def help(self, update: Update, context: CallbackContext) -> None:
-        self._log_command(update, "help")
-        help_text = """
-        👋 Welcome to @erocabulary_bot Here are some of my available commands:
-        ⭐ /start  [sends a greeting message to get you started.] 
-        📚 /send_vocab  [improves your vocabulary by sending 
-        a random English word with its definition and use case.] 
-        📝 /compose <topic> [composes a poem, story, 
-        or ideas.] 🗣️ /pronounce <word> [learn to pronounce a word.] 
-        🏻 /rewrite <content> [rephrases and rewrites 
-        the given content with correct English.] 
-        📖 /meaning <word/phrase>  [gets you the definition and sentence 
-        example of the requested word/phrase.] 
-        📝 /essay <topic>  [provides you with an essay of 200 words on the 
-        given topic.] 
-        📧 /email <email formal or informal | content | information | context>  [writes an email on the 
-        given information.] ✉ /letter <letter formal or informal | topic | information | context> [writes a letter on 
-        the given information.] 
-        🔤 /summarise <paragraph> [produces a summmary on the given paragraph | information | 
-        topic] 
-        🌐 /ping  [the round-trip latency in milliseconds between this bot and the Telegram servers.] ℹ /dev [
-        information regarding the desveloper of this bot.] 
-        📝 /grammar_check <text> [checks and corrects the grammar 
-        of the provided text.] 
-        🔄 /translate <text> [translates the provided text to Ukrainian.] 🎟️ /ticket <issue>
-        🎯 /quiz [start a quiz to test your English to Ukrainian translation skills]
-        📅 /subscribe_quiz [subscribe to hourly quizzes]
-        🚫 /unsubscribe_quiz [unsubscribe from hourly quizzes]
-
-        *DEBUG*
-        📥 /stats  [gets you some statistics about the bot.]
-        ❌ /logs [retrieves the log file for debugging.]
-        🔁 /restart [restarts the bot (admin only)]
-        🎫/tick [sends your message to the developers of this bot]
-
-        I'm your one-stop-shop for all things English related, designed to help you enhance your language skills with 
-        ease and convenience. Start improving your English language proficiency today!"""
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
-
     async def ping(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "ping")
         start_time = time.time()
@@ -238,55 +274,38 @@ class TelegramBot:
             text=f"Pong! Latency is {latency}ms"
         )
 
-    async def send_text_and_voice_response(self, update: Update, context: CallbackContext, text: str) -> None:
-        try:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
-            audio_filepath = self.speech_engine.convert_text_to_speech(text)
-            with open(audio_filepath, 'rb') as audio:
+    async def handle_voice(self, update: Update, context: CallbackContext) -> None:
+        self._log_command(update, "voice")
+
+        async with self.speech_engine.download_voice_as_ogg(update.message.voice) as ogg_filepath:
+            mp3_filepath = await self.speech_engine.convert_ogg_to_mp3(ogg_filepath)
+            transcript_text = await self.speech_engine.convert_speech_to_text(mp3_filepath)
+            answer = await self.speech_engine.generate_response(transcript_text)
+            response_audio_filepath = await self.speech_engine.convert_text_to_speech(answer)
+
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=answer)
+            with open(response_audio_filepath, 'rb') as audio:
                 await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio)
+
+            os.remove(mp3_filepath)
+            os.remove(response_audio_filepath)
+
+    async def send_partial_voice_response(self, update: Update, context: CallbackContext, full_text: str,
+                                          voice_text: str) -> None:
+        try:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=full_text)
+            audio_filepath = await self.speech_engine.convert_text_to_speech(voice_text)
+
+            async with aiofiles.open(audio_filepath, 'rb') as audio:
+                await context.bot.send_voice(chat_id=update.effective_chat.id, voice=await audio.read())
+
             os.remove(audio_filepath)
         except Exception as e:
-            logging.error(f"Error in send_text_and_voice_response: {e}")
+            logger.error(f"Error in send_partial_voice_response: {e}")
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="Sorry, an error occurred while generating the voice response."
             )
-
-    async def handle_voice(self, update: Update, context: CallbackContext) -> None:
-        self._log_command(update, "voice")
-
-        ogg_filepath = await self.speech_engine.download_voice_as_ogg(update.message.voice)
-        mp3_filepath = self.speech_engine.convert_ogg_to_mp3(ogg_filepath)
-        transcript_text = self.speech_engine.convert_speech_to_text(mp3_filepath)
-        answer = self.speech_engine.generate_response(transcript_text)
-        response_audio_filepath = self.speech_engine.convert_text_to_speech(answer)
-
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=answer)
-        with open(response_audio_filepath, 'rb') as audio:
-            await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio)
-
-        os.remove(ogg_filepath)
-        os.remove(mp3_filepath)
-        os.remove(response_audio_filepath)
-
-    async def send_vocab(self, update: Update, context: CallbackContext) -> None:
-        self._log_command(update, "send_vocab")
-        random_seed = random.randint(1, 1000000)
-        prompt = f"""
-        Please provide a brief English word or phrase from spoken English, also provide an Ukrainian translated version.
-        Format your response as follows:
-            Word: [insert word or phrase]
-            Definition: [insert brief definition]
-            Use-Case: [insert brief sentence example]
-            Слово: [вставити слово або словосполучення]
-            Визначення: [вставити коротке визначення]
-            Use-Case: [вставити короткий приклад речення].
-            Keep the entire response under 50 words.
-            Seed: {random_seed}  # Include the random seed in the prompt
-        """
-        response = self._generate_ai_response(prompt)
-
-        await self.send_text_and_voice_response(update, context, response)
 
     async def meaning(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "meaning")
@@ -384,57 +403,42 @@ class TelegramBot:
         )
 
     async def quiz(self, update: Update, context: CallbackContext) -> int:
-        print("Quiz method called")
-        try:
-            if update.effective_user:
-                self._log_command(update, "quiz")
-            logging.info("Generating quiz question...")
+        self._log_command(update, "quiz")
+        logging.info("Generating quiz question...")
 
-            quiz_data = self.ai.generate_quiz_question()
-            if not quiz_data:
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text="Sorry, I couldn't generate a quiz question at the moment. Please try again later."
-                )
-                return ConversationHandler.END
-
-            audio_filepath = self.speech_engine.convert_text_to_speech(quiz_data['english_sentence'])
-
-            with open(audio_filepath, 'rb') as audio:
-                await context.bot.send_voice(
-                    chat_id=update.effective_chat.id,
-                    voice=audio,
-                    caption="Listen to the sentence and provide the correct Ukrainian translation."
-                )
-
-            os.remove(audio_filepath)
-
-            context.user_data['quiz_data'] = quiz_data
+        quiz_data = self.ai.generate_quiz_question()
+        if not quiz_data:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="Please type your Ukrainian translation:"
-            )
-
-            return TelegramData.ANSWER
-        except Exception as e:
-            logging.error(f"Error in quiz method: {e}")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="An error occurred while starting the quiz. Please try again later."
+                text="Sorry, I couldn't generate a quiz question at the moment. Please try again later."
             )
             return ConversationHandler.END
 
+        audio_filepath = await self.speech_engine.convert_text_to_speech(quiz_data['english_sentence'])
+
+        async with aiofiles.open(audio_filepath, 'rb') as audio:
+            await context.bot.send_voice(
+                chat_id=update.effective_chat.id,
+                voice=await audio.read(),
+                caption="Listen to the sentence and provide the correct Ukrainian translation."
+            )
+
+        os.remove(audio_filepath)
+
+        context.user_data['quiz_data'] = quiz_data
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Please type your Ukrainian translation:"
+        )
+
+        return TelegramData.ANSWER
+
     @staticmethod
     async def check_answer(update: Update, context: CallbackContext) -> int:
-        print("Check answer method called")
-        logging.info("Check answer method called")
         user_answer = update.message.text
         chat_id = update.effective_chat.id
 
-        if 'scheduled_quizzes' in context.bot_data and chat_id in context.bot_data['scheduled_quizzes']:
-            quiz_data = context.bot_data['scheduled_quizzes'].pop(chat_id)
-        else:
-            quiz_data = context.user_data.get('quiz_data')
+        quiz_data = context.user_data.get('quiz_data')
 
         if not quiz_data:
             await context.bot.send_message(
@@ -450,9 +454,7 @@ class TelegramBot:
 
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"{result_text}\n\nEnglish sentence: "
-                 f"{result_text}\n\nEnglish sentence: "
-                 f"{quiz_data['english_sentence']}"
+            text=f"{result_text}\n\nEnglish sentence: {quiz_data['english_sentence']}"
         )
 
         context.user_data.pop('quiz_data', None)
@@ -464,8 +466,7 @@ class TelegramBot:
         return text if text else None
 
     def _generate_ai_response(self, prompt: str) -> str:
-        self.ai.get_prompt(prompt)
-        return self.ai.generate_response()
+        return self.ai.generate_response(prompt)
 
     @staticmethod
     def _log_command(update: Update, command: str):
@@ -487,16 +488,16 @@ class TelegramBot:
 
         return wrapper
 
-    def restart_bot(self, update: Update, context: CallbackContext):
+    async def restart_bot(self, update: Update, context: CallbackContext):
         self._log_command(update, "restart")
-        context.bot.send_message(chat_id=update.effective_chat.id, text="Restarting...")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="Restarting...")
         try:
             import os
             import sys
             os.execl(sys.executable, sys.executable, *sys.argv)
         except Exception as e:
             logging.error(f"Error restarting bot: {e}")
-            context.bot.send_message(chat_id=update.effective_chat.id, text=f"Restart failed: {e}")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Restart failed: {e}")
 
     async def dev_info(self, update: Update, context: CallbackContext):
         self._log_command(update, "dev_info")

@@ -1,27 +1,53 @@
 import logging.config
+import signal
+import sys
+from typing import NoReturn
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.executors.asyncio import AsyncIOExecutor
 
-from src.configs.config import AudioSettings
+from src.configs.config import AudioSettings, TelegramData
 from src.configs.helpers import create_dir_if_not_exists
 from src.telegram_bot.bot import TelegramBot
 from src.configs.log_config import LOGGING
-
 
 logging.config.dictConfig(LOGGING)
 logger = logging.getLogger(__name__)
 
 
-def main() -> None:
-    create_dir_if_not_exists(AudioSettings.AUDIOS_DIR)
-    bot = TelegramBot()
-    app = bot.application
+def signal_handler(signum, frame):
+    """Handle SIGINT and SIGTERM signals for graceful shutdown."""
+    logger.info(f"Received signal {signum}. Shutting down...")
+    sys.exit(0)
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=1, args=[app])
-    scheduler.start()
 
-    app.run_polling()
+def main() -> NoReturn:
+    try:
+        # Set up signal handlers
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        # Create necessary directories
+        create_dir_if_not_exists(AudioSettings.AUDIOS_DIR)
+
+        # Initialize bot
+        bot = TelegramBot()
+        app = bot.application
+
+        # Set up scheduler
+        executors = {
+            'default': AsyncIOExecutor()
+        }
+        scheduler = AsyncIOScheduler(executors=executors)
+        scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL, args=[app])
+        scheduler.start()
+
+        logger.info("Starting Telegram bot...")
+        app.run_polling()
+
+    except Exception as e:
+        logger.error(f"An error occurred in the main function: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
