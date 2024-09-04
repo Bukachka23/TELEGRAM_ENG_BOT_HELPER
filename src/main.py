@@ -23,18 +23,14 @@ def signal_handler(signum, frame):
 
 def main() -> NoReturn:
     try:
-        # Set up signal handlers
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
-        # Create necessary directories
         create_dir_if_not_exists(AudioSettings.AUDIOS_DIR)
 
-        # Initialize bot
         bot = TelegramBot()
         app = bot.application
 
-        # Set up scheduler
         executors = {
             'default': AsyncIOExecutor()
         }

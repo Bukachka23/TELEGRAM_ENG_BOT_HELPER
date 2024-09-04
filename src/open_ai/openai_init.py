@@ -33,7 +33,7 @@ class OpenAIEngine:
             logger.error(f"Error in create_completion: {e}")
             return f"Sorry, an error occurred: {str(e)}"
 
-    def translate_text(self, text: str, source_language: str = "en", target_language: str = "uk") -> str:
+    def translate_text(self, text: str, source_language: str = "english", target_language: str = "ukrainian") -> str:
         """Translate text from source language to target language."""
         messages = [
             {
