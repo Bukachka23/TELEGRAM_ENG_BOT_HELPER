@@ -30,6 +30,7 @@ class TelegramBot:
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _create_application_with_retry(self):
+        logger.info("Creating Telegram application with retry...")
         request = HTTPXRequest(connection_pool_size=8, connect_timeout=180, read_timeout=180)
         return Application.builder().token(EnvSettings.TELEGRAM_BOT_TOKEN).request(request).build()
 
@@ -188,11 +189,11 @@ class TelegramBot:
 
     async def scheduled_quiz(self, context: CallbackContext) -> None:
         start_time = time.time()
-        logging.info("Starting scheduled quiz")
+        logger.info("Starting scheduled quiz...")
         chat_ids = context.bot_data.get('subscribed_users', [])
         for chat_id in chat_ids:
             try:
-                logging.info(f"Sending scheduled quiz to {chat_id}")
+                logger.info(f"Sending scheduled quiz to {chat_id}...")
                 quiz_data = self.ai.generate_quiz_question()
                 if not quiz_data:
                     await context.bot.send_message(
@@ -222,10 +223,10 @@ class TelegramBot:
                 context.bot_data['scheduled_quizzes'][chat_id] = quiz_data
 
             except Exception as e:
-                logging.error(f"Error sending scheduled quiz to {chat_id}: {e}")
+                logger.error(f"Error sending scheduled quiz to {chat_id}: {e}")
 
             end_time = time.time()
-            logging.info(f"Scheduled quiz completed in {end_time - start_time} seconds")
+            logger.info(f"Scheduled quiz completed in {end_time - start_time} seconds")
 
     @staticmethod
     async def subscribe_quiz(update: Update, context: CallbackContext) -> None:

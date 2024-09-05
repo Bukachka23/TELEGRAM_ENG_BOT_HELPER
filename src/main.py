@@ -1,3 +1,5 @@
+# main.py
+
 import logging.config
 import signal
 import sys
@@ -23,14 +25,18 @@ def signal_handler(signum, frame):
 
 def main() -> NoReturn:
     try:
+        logger.info("Starting main function...")
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+        logger.info("Creating necessary directories...")
         create_dir_if_not_exists(AudioSettings.AUDIOS_DIR)
 
+        logger.info("Initializing Telegram bot...")
         bot = TelegramBot()
         app = bot.application
 
+        logger.info("Setting up scheduler...")
         executors = {
             'default': AsyncIOExecutor()
         }
@@ -38,7 +44,7 @@ def main() -> NoReturn:
         scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL, args=[app])
         scheduler.start()
 
-        logger.info("Starting Telegram bot...")
+        logger.info("Starting Telegram bot polling...")
         app.run_polling()
 
     except Exception as e:
