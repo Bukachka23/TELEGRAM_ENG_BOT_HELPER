@@ -24,7 +24,7 @@ class SpeechEngine:
         try:
             self.client = OpenAI(api_key=EnvSettings.OPENAI_API_KEY)
         except Exception as e:
-            logger.error(f"Filed to initialize OpenAI client: {e}")
+            logger.error(f"Failed to initialize OpenAI client: {e}")
             raise
 
     @staticmethod
@@ -58,7 +58,7 @@ class SpeechEngine:
 
     @asynccontextmanager
     async def download_voice_as_ogg(self, voice: Any):
-        """Download voice message as OGG gile."""
+        """Download voice message as OGG file."""
         voice_file = await voice.get_file()
         ogg_filepath = os.path.join(AudioSettings.AUDIOS_DIR, f"{self.generate_uuid()}.ogg")
         try:
@@ -76,16 +76,16 @@ class SpeechEngine:
             audio.export(mp3_filepath, format="mp3")
             return mp3_filepath
         except Exception as e:
-            logger.error(f"Filed to convert OGG to MP3: {e}")
+            logger.error(f"Failed to convert OGG to MP3: {e}")
             raise
         finally:
             if os.path.exists(ogg_filepath):
                 os.remove(ogg_filepath)
 
-    async def generate_response(self, text: str) -> str:
+    def generate_response(self, text: str) -> str:
         """Generate a response using GPT-4 model."""
         try:
-            response = await self.client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=OpenaiSettings.OPENAI_MODEL,
                 messages=[
                     {"role": "user", "content": text}

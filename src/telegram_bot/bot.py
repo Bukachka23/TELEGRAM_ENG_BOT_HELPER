@@ -57,6 +57,8 @@ class TelegramBot:
             ('quiz', self.quiz),
             ('subscribe_quiz', self.subscribe_quiz),
             ('unsubscribe_quiz', self.unsubscribe_quiz),
+            ('start_speech_practice', self.start_speech_practice),
+
         ]
 
         for command, callback in command_handlers:
@@ -118,6 +120,7 @@ class TelegramBot:
         /quiz - Start a translation quiz
         /subscribe_quiz - Subscribe to hourly quizzes
         /unsubscribe_quiz - Unsubscribe from hourly quizzes
+        /start_speech_practice - Start speech practice
         """
         await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
 
@@ -275,21 +278,64 @@ class TelegramBot:
             text=f"Pong! Latency is {latency}ms"
         )
 
+    async def start_speech_practice(self, update: Update, context: CallbackContext) -> None:
+        self._log_command(update, "start_speech_practice")
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Welcome to the speech practice session! Please send a voice message, and I'll respond with feedback."
+        )
+        context.user_data['in_speech_practice'] = True
+
     async def handle_voice(self, update: Update, context: CallbackContext) -> None:
         self._log_command(update, "voice")
 
-        async with self.speech_engine.download_voice_as_ogg(update.message.voice) as ogg_filepath:
-            mp3_filepath = await self.speech_engine.convert_ogg_to_mp3(ogg_filepath)
-            transcript_text = await self.speech_engine.convert_speech_to_text(mp3_filepath)
-            answer = await self.speech_engine.generate_response(transcript_text)
+        mp3_filepath = None
+        response_audio_filepath = None
+
+        try:
+            async with self.speech_engine.download_voice_as_ogg(update.message.voice) as ogg_filepath:
+                mp3_filepath = await self.speech_engine.convert_ogg_to_mp3(ogg_filepath)
+                transcript_text = await self.speech_engine.convert_speech_to_text(mp3_filepath)
+
+            if context.user_data.get('in_speech_practice', False):
+                prompt = (
+                    f"You are an experienced English tutor helping a student improve their speaking skills. "
+                    f"The student has just said: '{transcript_text}'. "
+                    f"Provide constructive feedback on their pronunciation, grammar, and vocabulary usage. "
+                    f"Encourage them to elaborate on their thoughts or ask a follow-up question to continue the "
+                    f"conversation."
+                )
+                answer = self.ai.generate_response(prompt)
+            else:
+                answer = self.ai.generate_response(transcript_text)
+
             response_audio_filepath = await self.speech_engine.convert_text_to_speech(answer)
 
             await context.bot.send_message(chat_id=update.effective_chat.id, text=answer)
+
             with open(response_audio_filepath, 'rb') as audio:
                 await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio)
 
-            os.remove(mp3_filepath)
-            os.remove(response_audio_filepath)
+        except Exception as e:
+            logger.error(f"Error in handle_voice: {e}")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Sorry, I encountered an error while processing your voice message. Please try again."
+            )
+        finally:
+            if mp3_filepath and os.path.exists(mp3_filepath):
+                try:
+                    os.remove(mp3_filepath)
+                    logger.debug(f"Removed temporary file: {mp3_filepath}")
+                except Exception as remove_err:
+                    logger.error(f"Failed to remove mp3 file {mp3_filepath}: {remove_err}")
+
+            if response_audio_filepath and os.path.exists(response_audio_filepath):
+                try:
+                    os.remove(response_audio_filepath)
+                    logger.debug(f"Removed temporary file: {response_audio_filepath}")
+                except Exception as remove_err:
+                    logger.error(f"Failed to remove response audio file {response_audio_filepath}: {remove_err}")
 
     async def send_partial_voice_response(self, update: Update, context: CallbackContext, full_text: str,
                                           voice_text: str) -> None:

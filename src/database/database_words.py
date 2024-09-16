@@ -15,9 +15,6 @@ class WordDatabase:
     def load_words(self) -> None:
         """
         Load words from the specified file path.
-
-        This method reads words from the file, strips whitespace, and stores them in memory.
-        It also logs the number of loaded words or any errors encountered during the process.
         """
         try:
             with self.file_path.open('r', encoding='utf-8') as file:
@@ -31,8 +28,6 @@ class WordDatabase:
     def get_random_word(self) -> Optional[str]:
         """
         Return a random word from the loaded list of words.
-
-        If the word list is empty, returns None.
         """
         return random.choice(self.words) if self.words else None
 
@@ -43,8 +38,6 @@ class WordDatabase:
     def add_word(self, word: str) -> None:
         """
         Add a new word to the database.
-
-        This method adds the word to both the in-memory list and the file.
         """
         if word.strip() and word not in self.words:
             self.words.append(word.strip())
@@ -58,9 +51,6 @@ class WordDatabase:
     def remove_word(self, word: str) -> bool:
         """
         Remove a word from the database.
-
-        This method removes the word from both the in-memory list and the file.
-        Returns True if the word was removed, False otherwise.
         """
         if word in self.words:
             self.words.remove(word)
