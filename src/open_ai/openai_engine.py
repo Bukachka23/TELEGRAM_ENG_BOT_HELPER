@@ -1,39 +1,52 @@
 import logging.config
 import random
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from openai import OpenAI
+import openai
+from openai import OpenAIError
 
 from src.configs.log_config import LOGGING
-from src.configs.config import EnvSettings, OpenaiSettings
+from src.configs.settings import EnvSettings, OpenaiSettings
 
 logging.config.dictConfig(LOGGING)
 logger = logging.getLogger(__name__)
 
 
 class OpenAIEngine:
+    """Engine to interact with OpenAI API."""
+
     def __init__(self):
-        self.client = OpenAI(api_key=EnvSettings.OPENAI_API_KEY)
+        self.api_key = EnvSettings.OPENAI_API_KEY
+        openai.api_key = self.api_key
+        self.model = OpenaiSettings.OPENAI_MODEL
 
     @staticmethod
     def _process_response(response) -> str:
         """Process the OpenAI response and extract the content."""
-        return response.choices[0].message.content.strip()
+        try:
+            return response.choices[0].message.content
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error processing response: {e}")
+            return "Sorry, I couldn't process the response."
 
-    def _create_completion(self, model: str, messages: List[Dict], **kwargs) -> str:
+    async def _create_completion(self, model: str, messages: List[Dict], **kwargs) -> str:
         """Create a completion using the specified model and messages."""
         try:
-            response = self.client.chat.completions.create(
+            response = openai.chat.completions.create(
                 model=model,
                 messages=messages,
                 **kwargs
             )
             return self._process_response(response)
+        except OpenAIError as e:
+            logger.error(f"OpenAI API error: {e}")
+            return "Sorry, an error occurred while processing your request."
         except Exception as e:
-            logger.error(f"Error in create_completion: {e}")
-            return f"Sorry, an error occurred: {str(e)}"
+            logger.exception(f"Unexpected error in _create_completion: {e}")
+            return "Sorry, an unexpected error occurred."
 
-    def translate_text(self, text: str, source_language: str = "english", target_language: str = "ukrainian") -> str:
+    async def translate_text(self, text: str, source_language: str = "english", target_language: str = "ukrainian") \
+            -> str:
         """Translate text from source language to target language."""
         messages = [
             {
@@ -41,17 +54,17 @@ class OpenAIEngine:
                 "content": f"Translate '{text}' from {source_language} to {target_language}."
             }
         ]
-        return self._create_completion(OpenaiSettings.OPENAI_MODEL, messages)
+        return await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages)
 
-    def generate_response(self, prompt: str) -> str:
+    async def generate_response(self, prompt: str) -> str:
         """Generate a response based on the given prompt."""
         messages = [
             {"role": "system", "content": "You are a helpful assistant that specializes in English language tutoring."},
             {"role": "user", "content": prompt}
         ]
-        return self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.4)
+        return await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.4)
 
-    def grammar_check(self, text: str) -> str:
+    async def grammar_check(self, text: str) -> str:
         """Check the grammar of the given text."""
         messages = [
             {"role": "system", "content": "You are an expert English grammar checker. Correct the following text and "
@@ -59,21 +72,28 @@ class OpenAIEngine:
                                           "corrections needed.' followed by the original text."},
             {"role": "user", "content": text}
         ]
-        return self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.3)
+        return await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.3)
 
-    def generate_quiz_question(self) -> Dict:
+    async def generate_quiz_question(self) -> Optional[Dict]:
         """Generate a quiz question with multiple choice options."""
         messages = [
             {"role": "system", "content": "Generate a short English sentence (5-10 words) and provide its Ukrainian "
                                           "translation. Also, provide three incorrect Ukrainian translations."},
             {"role": "user", "content": "Generate a quiz question."}
         ]
-        content = self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.5)
+        content = await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.5)
         lines = content.split('\n')
 
-        english_sentence = lines[0].replace('English: ', '')
-        correct_translation = lines[1].replace('Correct Ukrainian: ', '')
-        incorrect_translations = [line.replace('Incorrect Ukrainian: ', '') for line in lines[2:5]]
+        if len(lines) < 5:
+            logger.error("Incomplete quiz question generated.")
+            return None
+
+        english_sentence = lines[0].replace('English: ', '').strip()
+        correct_translation = lines[1].replace('Correct Ukrainian: ', '').strip()
+        incorrect_translations = [
+            line.replace('Incorrect Ukrainian: ', '').strip()
+            for line in lines[2:5]
+        ]
 
         all_options = [correct_translation] + incorrect_translations
         random.shuffle(all_options)
@@ -84,10 +104,10 @@ class OpenAIEngine:
             'options': all_options
         }
 
-    def summarize_text(self, text: str) -> str:
+    async def summarize_text(self, text: str) -> str:
         """Summarize the given text."""
         messages = [
             {"role": "system", "content": "Summarize the following text concisely:"},
             {"role": "user", "content": text}
         ]
-        return self._create_completion(OpenaiSettings.OPENAI_MODEL, messages)
+        return await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages)

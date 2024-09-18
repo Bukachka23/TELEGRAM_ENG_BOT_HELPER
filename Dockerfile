@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-COPY src/words.txt /app/src/words.txt
+COPY src/data/words.txt /app/src/words.txt
 
 RUN touch .env
 

@@ -23,7 +23,7 @@ class OpenaiSettings:
 
 
 class DatabaseSettings:
-    DEFAULT_WORD_FILE_PATH = Path('src/words.txt')
+    DEFAULT_WORD_FILE_PATH = Path('src/data/words.txt')
 
     @classmethod
     def get_word_file_path(cls) -> Path:
