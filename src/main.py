@@ -1,5 +1,3 @@
-# main.py
-
 import logging.config
 import signal
 import sys
@@ -8,7 +6,7 @@ from typing import NoReturn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
 
-from src.configs.config import AudioSettings, TelegramData
+from src.configs.settings import AudioSettings, TelegramData
 from src.configs.helpers import create_dir_if_not_exists
 from src.telegram_bot.bot import TelegramBot
 from src.configs.log_config import LOGGING
@@ -41,7 +39,8 @@ def main() -> NoReturn:
             'default': AsyncIOExecutor()
         }
         scheduler = AsyncIOScheduler(executors=executors)
-        scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL, args=[app])
+        scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL)
+
         scheduler.start()
 
         logger.info("Starting Telegram bot polling...")
