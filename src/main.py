@@ -6,6 +6,7 @@ from typing import NoReturn
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.executors.asyncio import AsyncIOExecutor
 
+from src.commands.quiz_commands import QuizCommands
 from src.configs.settings import AudioSettings, TelegramData
 from src.configs.helpers import create_dir_if_not_exists
 from src.telegram_bot.bot import TelegramBot
@@ -32,6 +33,7 @@ def main() -> NoReturn:
 
         logger.info("Initializing Telegram bot...")
         bot = TelegramBot()
+        quiz = QuizCommands(ai_engine=bot.ai_engine, speech_engine=bot.speech_engine, application=bot.application)
         app = bot.application
 
         logger.info("Setting up scheduler...")
@@ -39,7 +41,7 @@ def main() -> NoReturn:
             'default': AsyncIOExecutor()
         }
         scheduler = AsyncIOScheduler(executors=executors)
-        scheduler.add_job(bot.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL)
+        scheduler.add_job(quiz.scheduled_quiz, 'interval', minutes=TelegramData.SCHEDULE_INTERVAL)
 
         scheduler.start()
 
