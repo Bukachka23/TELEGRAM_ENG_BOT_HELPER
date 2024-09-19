@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 class WordDatabase:
     """Handles word database operations."""
 
-    def __init__(self, file_path: Optional[Path] = None):
-        self.file_path: Path = file_path or DatabaseSettings.DEFAULT_WORD_FILE_PATH
+    def __init__(self, language: str):
+        self.language = language
+        self.file_path: Path = DatabaseSettings.get_word_file_path(language)
         self.words: List[str] = []
         self.lock = threading.Lock()
         self.load_words()

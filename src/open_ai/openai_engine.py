@@ -45,13 +45,12 @@ class OpenAIEngine:
             logger.exception(f"Unexpected error in _create_completion: {e}")
             return "Sorry, an unexpected error occurred."
 
-    async def translate_text(self, text: str, source_language: str = "english", target_language: str = "ukrainian") \
-            -> str:
-        """Translate text from source language to target language."""
+    async def translate_text(self, text: str, target_language: str = "english") -> str:
+        """Translate text to the target language."""
         messages = [
             {
                 "role": "user",
-                "content": f"Translate '{text}' from {source_language} to {target_language}."
+                "content": f"Translate the following text to {target_language}: '{text}'."
             }
         ]
         return await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages)
@@ -77,8 +76,8 @@ class OpenAIEngine:
     async def generate_quiz_question(self) -> Optional[Dict]:
         """Generate a quiz question with multiple choice options."""
         messages = [
-            {"role": "system", "content": "Generate a short English sentence (5-10 words) and provide its Ukrainian "
-                                          "translation. Also, provide three incorrect Ukrainian translations."},
+            {"role": "system", "content": "Generate a short English sentence (5-10 words) and provide its "
+                                          "translation. Also, provide three incorrect translations."},
             {"role": "user", "content": "Generate a quiz question."}
         ]
         content = await self._create_completion(OpenaiSettings.OPENAI_MODEL, messages, temperature=0.5)
@@ -89,9 +88,9 @@ class OpenAIEngine:
             return None
 
         english_sentence = lines[0].replace('English: ', '').strip()
-        correct_translation = lines[1].replace('Correct Ukrainian: ', '').strip()
+        correct_translation = lines[1].replace('Correct Translation: ', '').strip()
         incorrect_translations = [
-            line.replace('Incorrect Ukrainian: ', '').strip()
+            line.replace('Incorrect Translation: ', '').strip()
             for line in lines[2:5]
         ]
 
