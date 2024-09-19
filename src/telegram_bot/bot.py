@@ -37,13 +37,14 @@ class TelegramBot:
         """Initialize the TelegramBot with necessary components and handlers."""
         self.ai_engine = OpenAIEngine()
         self.speech_engine = SpeechEngine()
-        self.word_database = WordDatabase()
+        self.word_database = {
+            'english': WordDatabase('english'),
+            'german': WordDatabase('german')
+        }
 
         self.application = self._create_application_with_retry()
         self._setup_handlers()
         self.bot = self.application.bot  # type: ignore[attr-defined]
-
-
 
     @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
     def _create_application_with_retry(self) -> Application:
@@ -89,6 +90,7 @@ class TelegramBot:
             'subscribe_quiz': self.subscribe_quiz,
             'unsubscribe_quiz': self.unsubscribe_quiz,
             'start_speech_practice': self.start_speech_practice,
+            'set_language': self.set_language
         }
 
         for command, callback in command_callbacks.items():
@@ -107,6 +109,35 @@ class TelegramBot:
             persistent=False,
         )
         self.application.add_handler(quiz_conversation)
+
+    def get_target_language(self, context: CallbackContext) -> str:
+        return context.user_data.get('target_language', 'ukrainian').lower()
+
+    async def set_language(self, update: Update, context: CallbackContext) -> None:
+        """
+        Handle the /set_language command to set the user's preferred target language.
+        """
+        self._log_command(update, "set_language")
+        language = self._extract_command_text(update.message.text, "/set_language")
+        if not language:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Please specify a language. Usage: /set_language <language>"
+            )
+            return
+
+        if language.lower() not in ['ukrainian', 'german']:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Invalid language. Supported languages are 'ukrainian' and 'german'."
+            )
+            return
+
+        context.user_data['target_language'] = language.lower()
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Target language set to {language.capitalize()}."
+        )
 
     async def _log_system_info(self) -> None:
         """
@@ -173,38 +204,40 @@ class TelegramBot:
         Handle the /send_vocab command. Send a random word with its definition and usage examples.
         """
         self._log_command(update, "send_vocab")
-        word = self.word_database.get_random_word()
-
+        language = self.get_target_language(context
+                                            )
+        word = self.word_database.get(language)
         if not word:
-            logger.warning("No word found in the database.")
-            await update.message.reply_text("Sorry, no word found in the database.")
+            logger.warning(f"No word found for language {language} database")
+            await update.message.reply_text(f"Sorry, now word found in the {language} database")
             return
 
-        prompts = [
-            f"Define '{word}' in one sentence:",
-            f"Generate a sentence using '{word}':",
-            f"Define '{word}' in Ukrainian in one sentence:",
-            f"Generate a Ukrainian sentence using '{word}':"
-        ]
+        if language == 'english':
+            prompts = [
+                f"Define '{word}' in one sentence:",
+                f"Generate a sentence using '{word}'"
+            ]
+        else:
+            prompts = [
+                f"Define '{word}' in {language} in one sentence:",
+                f"Generate a {language} sentence using '{word}'"
+            ]
 
         responses = [await self.ai_engine.generate_response(prompt) for prompt in prompts]
 
         full_response = (
             f"Word: {word}\n"
             f"Definition: {responses[0]}\n"
-            f"Example sentence: {responses[1]}\n\n"
-            f"Слово: {word}\n"
-            f"Визначення: {responses[2]}\n"
-            f"Приклад речення: {responses[3]}"
-        )
-
-        voice_response = (
-            f"Word: {word}\n"
-            f"Definition: {responses[0]}\n"
             f"Example sentence: {responses[1]}"
         )
 
-        await self._send_partial_voice_response(update, context, full_response, voice_response)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=full_response)
+        language_code = SpeechEngine.LANGUAGE_CODES.get(language, 'en')
+        audio_filepath = await self.speech_engine.convert_text_to_speech(full_response, language_code=language_code)
+        async with aiofiles.open(audio_filepath, 'rb') as audio_file:
+            audio_content = await audio_file.read()
+        await context.bot.send_voice(chat_id=update.effective_chat.id, voice=audio_content)
+        os.remove(audio_filepath)
 
     async def send_text_and_voice_response(self, update: Update, context: CallbackContext, text: str) -> None:
         """
@@ -602,7 +635,6 @@ class TelegramBot:
         """
         self._log_command(update, "translate")
         text_to_translate = self._extract_command_text(update.message.text, "/translate")
-
         if not text_to_translate:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -610,20 +642,15 @@ class TelegramBot:
             )
             return
 
-        translated_text = await self.ai_engine.translate_text(text_to_translate)
-        logger.info(f"Translation result: {translated_text}")
-
-        try:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"Original: {text_to_translate}\nTranslated: {translated_text}"
-            )
-        except Exception as e:
-            logger.error(f"Error sending translation result: {e}")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"Sorry, an error occurred while sending the translation result.\nError: {str(e)}"
-            )
+        target_language = self.get_target_language(context)
+        translated_text = await self.ai_engine.translate_text(
+            text_to_translate,
+            target_language=target_language
+        )
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"Original: {text_to_translate}\nTranslated to {target_language.capitalize()}: {translated_text}"
+        )
 
     async def grammar_check(self, update: Update, context: CallbackContext) -> None:
         """
@@ -648,7 +675,7 @@ class TelegramBot:
             text="Checking grammar..."
         )
 
-        corrected_text = self.ai_engine.grammar_check(text_to_check)
+        corrected_text = await self.ai_engine.grammar_check(text_to_check)
 
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -667,42 +694,12 @@ class TelegramBot:
             int: The next state in the conversation.
         """
         self._log_command(update, "quiz")
-        logger.info("Generating quiz question...")
-
-        quiz_data = self.ai_engine.generate_quiz_question()
+        target_language = self.get_target_language(context)
+        quiz_data = await self.ai_engine.generate_quiz_question()
         if not quiz_data:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="Sorry, I couldn't generate a quiz question at the moment. Please try again later."
-            )
-            return ConversationHandler.END
-
-        audio_filepath = await self.speech_engine.convert_text_to_speech(quiz_data['english_sentence'])
-
-        try:
-            async with aiofiles.open(audio_filepath, 'rb') as audio_file:
-                voice_content = await audio_file.read()
-
-            await context.bot.send_voice(
-                chat_id=update.effective_chat.id,
-                voice=voice_content,
-                caption="Listen to the sentence and provide the correct Ukrainian translation."
-            )
-
-            os.remove(audio_filepath)
-
-            context.user_data['quiz_data'] = quiz_data
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="Please type your Ukrainian translation:"
-            )
-
-            return TelegramData.ANSWER
-        except Exception as e:
-            logger.error(f"Error during quiz setup: {e}")
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="An error occurred while setting up the quiz. Please try again later."
+                text=f"Sorry, I couldn't generate a quiz question for {target_language.capitalize()} at the moment."
             )
             return ConversationHandler.END
 

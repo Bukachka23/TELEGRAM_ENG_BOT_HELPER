@@ -1,9 +1,10 @@
 import asyncio
+import io
 import logging.config
+import os
 
 import uuid
 from contextlib import asynccontextmanager
-from io import BytesIO
 from pathlib import Path
 from typing import Any, Generator
 
@@ -11,7 +12,6 @@ import aiofiles
 import gtts
 import pydub
 import openai
-from openai import OpenAIError
 
 from src.configs.log_config import LOGGING
 from src.configs.settings import EnvSettings, AudioSettings
@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 
 class SpeechEngine:
     """Handles speech-to-text and text-to-speech operations using OpenAI and gTTS."""
+    LANGUAGE_CODES = {
+        'english': 'en',
+        'german': 'de',
+    }
 
     def __init__(self):
         self.client = self.initialize_openai_client()
@@ -63,15 +67,18 @@ class SpeechEngine:
             async with aiofiles.open(audio_filepath, 'rb') as audio_file:
                 audio_content = await audio_file.read()
 
-            transcript = await asyncio.to_thread(
-                self.client.Audio.transcriptions.create,
-                file=BytesIO(audio_content),
-                model="whisper-1"
+            buffer = io.BytesIO(audio_content)
+            buffer.name = os.path.basename(audio_filepath)
+
+            loop = asyncio.get_running_loop()
+            transcript = await loop.run_in_executor(
+                None,
+                lambda: self.client.audio.transcriptions.create(
+                    file=buffer,
+                    model="whisper-1"
+                )
             )
-            return transcript['text']
-        except OpenAIError as e:
-            logger.error(f"OpenAI API error during speech-to-text: {e}")
-            raise
+            return transcript.text
         except Exception as e:
             logger.exception("Failed to convert speech to text: %s", e)
             raise
@@ -115,19 +122,3 @@ class SpeechEngine:
                     ogg_path.unlink()
                 except Exception as remove_err:
                     logger.error(f"Failed to remove OGG file {ogg_path}: {remove_err}")
-
-    async def generate_response(self, text: str) -> str:
-        """Generate a response using GPT-4 model asynchronously."""
-        try:
-            prompt = {"role": "user", "content": text}
-            response = await openai.ChatCompletion.acreate(
-                model=EnvSettings.OPENAI_API_KEY,
-                messages=[prompt]
-            )
-            return response['choices'][0]['message']['content'].strip()
-        except OpenAIError as e:
-            logger.error(f"OpenAI API error during response generation: {e}")
-            return "Sorry, an error occurred while generating the response."
-        except Exception as e:
-            logger.exception("Unexpected error during response generation: %s", e)
-            return "Sorry, an unexpected error occurred."

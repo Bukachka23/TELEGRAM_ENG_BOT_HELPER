@@ -10,8 +10,8 @@ load_dotenv()
 
 @dataclass
 class AudioSettings:
-    AUDIOS_DIR = "audios"
-    VOICE_FILE = "voice.ogg"
+    AUDIOS_DIR: Path = Path("audios")
+    VOICE_FILE: Path = Path("voice.ogg")
 
 
 class OpenaiSettings:
@@ -23,22 +23,18 @@ class OpenaiSettings:
 
 
 class DatabaseSettings:
-    DEFAULT_WORD_FILE_PATH = Path('src/data/words.txt')
+    WORD_FILES = {
+        'english': Path('src/data/eng_words.txt'),
+        'german': Path('src/data/ger_words.txt'),
+    }
 
     @classmethod
-    def get_word_file_path(cls) -> Path:
-        if cls.DEFAULT_WORD_FILE_PATH.exists():
-            return cls.DEFAULT_WORD_FILE_PATH
-
-        current_dir_path = Path(os.getcwd()) / 'words.txt'
-        if current_dir_path.exists():
-            return current_dir_path
-
-        parent_dir_path = Path(os.getcwd()).parent / 'words.txt'
-        if parent_dir_path.exists():
-            return parent_dir_path
-
-        return cls.DEFAULT_WORD_FILE_PATH
+    def get_word_file_path(cls, language: str) -> Path:
+        file_path = cls.WORD_FILES.get(language.lower())
+        if file_path and file_path.exists():
+            return file_path
+        else:
+            raise FileNotFoundError(f"Word file for language '{language}' not found.")
 
 
 class EnvSettings:
