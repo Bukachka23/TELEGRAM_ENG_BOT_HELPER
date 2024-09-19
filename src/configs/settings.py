@@ -24,8 +24,8 @@ class OpenaiSettings:
 
 class DatabaseSettings:
     WORD_FILES = {
-        'english': Path('/Users/ihortresnystkyi/Documents/ENG_BOT/src/data/eng_words.txt'),
-        'german': Path('/Users/ihortresnystkyi/Documents/ENG_BOT/src/data/ger_words.txt'),
+        'english': Path('src/data/eng_words.txt'),
+        'german': Path('src/data/ger_words.txt'),
     }
 
     @classmethod
