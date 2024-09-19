@@ -205,12 +205,19 @@ class TelegramBot:
         Handle the /send_vocab command. Send a random word with its definition and usage examples.
         """
         self._log_command(update, "send_vocab")
-        language = self.get_target_language(context
-                                            )
-        word = self.word_database.get(language)
+        language = self.get_target_language(context)
+        word_db = self.word_database.get(language)
+
+        if not word_db:
+            logger.warning(f"No word database found for language: {language}")
+            await update.message.reply_text(f"Sorry, no word database found for {language}.")
+            return
+
+        word = word_db.get_random_word()
+
         if not word:
-            logger.warning(f"No word found for language {language} database")
-            await update.message.reply_text(f"Sorry, now word found in the {language} database")
+            logger.warning(f"No words available in the {language} database.")
+            await update.message.reply_text(f"Sorry, no words available in the {language} database.")
             return
 
         if language == 'english':
