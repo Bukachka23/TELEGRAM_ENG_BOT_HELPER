@@ -126,10 +126,10 @@ class TelegramBot:
             )
             return
 
-        if language.lower() not in ['ukrainian', 'german']:
+        if language.lower() not in ['english', 'german']:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="Invalid language. Supported languages are 'ukrainian' and 'german'."
+                text="Invalid language. Supported languages are 'english' and 'german'."
             )
             return
 
@@ -196,6 +196,7 @@ class TelegramBot:
             "/subscribe_quiz - Subscribe to hourly quizzes\n"
             "/unsubscribe_quiz - Unsubscribe from hourly quizzes\n"
             "/start_speech_practice - Start speech practice"
+            "/set_language <language> - Set target language"
         )
         await context.bot.send_message(chat_id=update.effective_chat.id, text=help_text)
 
